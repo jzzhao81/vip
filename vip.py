@@ -2,8 +2,8 @@
 # @Author: jzzhao
 # @Email:  jianzhou.zhao@gmail.com
 # @Date:   2017-12-31 13:04:56
-# @Last Modified by:   jzzhao
-# @Last Modified time: 2018-01-07 23:20:45
+# @Last Modified by:   Jianzhou Zhao
+# @Last Modified time: 2018-03-07 09:57:34
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,7 +16,15 @@ except ImportError:
 
 orbit_dict = {
         's': ['s'],
+        'px': ['px'],
+        'py': ['py'],
+        'pz': ['pz'],
         'p': ['py','pz','px'],
+        'dxy': ['dxy'],
+        'dyz': ['dyz'],
+        'dz2': ['dz2'],
+        'dxz': ['dxz'],
+        'x2-y2': ['x2-y2'],
         'd': ['dxy', 'dyz', 'dz2', 'dxz', 'x2-y2'],
         'f': ['f-3','f-2','f-1','f0','f1','f2','f3'],
         't2g': ['dxy', 'dyz', 'dxz'],
@@ -186,7 +194,7 @@ class kpoints:
 
         # get reciprocal basis
         self.rec_basis = np.array( [ data.text.split() \
-            for data in self.xml_data.find('.//structure[@name="finalpos"]/crystal/varray[@name="rec_basis"]')], dtype=np.float )
+            for data in self.xml_data.find('.//structure[@name="finalpos"]/crystal/varray[@name="rec_basis"]')], dtype=np.float )*np.pi*2.0
         # get K-Points mode
         self.kmode = self.xml_data.find('.//kpoints/generation').attrib["param"]
         if self.kmode == "listgenerated" :
@@ -217,6 +225,7 @@ class bandstructure:
     def get_eigenvalues(self):
         self.kpoints = kpoints(xml_data=self.xml_data)
         self.kpoints.get_kpath()
+        if (type(self.kpoints.kdiv) != int) : exit( "Vasprun KPOINTS type is wrong !" )
         self.efermi = float( self.xml_data.find('.//dos/i[@name="efermi"]').text )
         eigenvalues_tree = self.xml_data.find('.//calculation/eigenvalues/array/set')
         self.eigs = np.array( [ [ [ bnd.text.split()[0] for bnd in kpt ] for kpt in spin ] \
@@ -250,6 +259,7 @@ class bandstructure:
         return self.atoms.index[self.atoms.elements.index(key)]
 
     def get_orbit_index(self, key):
+        # print([item for item in orbit_dict.get(key) ])
         return [self.orbit_name.index(item) for item in orbit_dict.get(key)]
 
     def get_normalize(self):
@@ -259,9 +269,27 @@ class bandstructure:
                 for ibnd in range(self.nbands):
                     self.proj[ispin,ikpt,ibnd,:,:] /= norm[ispin,ikpt,ibnd]
 
+    def write_file(self, file='bands.dat', efermi=None):
+
+        if efermi :
+            band = self.eigs - efermi
+        else :
+            band = self.eigs
+
+        band_file = open(file,'w')
+        for ibnd in range(self.nbands):
+            for ikpt in range(self.kpoints.ntotal):
+                band_file.write('{0:10.5f}  {1:10.5f} \n'.format(self.kpoints.kpath[ikpt], band[0,ikpt,ibnd]))
+            band_file.write('\n')
+        band_file.close()
+        return
+
     def get_plot(self, labl=None, xlim=None, ylim=None, lw=1.2, efermi=None, projected=None):
 
-        if efermi : self.eigs -= efermi
+        if efermi :
+            band = self.eigs - efermi
+        else :
+            band = self.eigs
 
         # get x ticks
         tics = self.get_xtics()
@@ -276,7 +304,7 @@ class bandstructure:
 
         # set y limit
         if not ylim :
-            ax.set_ylim(self.eigs.min(), self.eigs.max())
+            ax.set_ylim(band.min(), band.max())
         else :
             ax.set_ylim(ylim[0], ylim[1])
 
@@ -287,12 +315,11 @@ class bandstructure:
             atoms_list = [ next(iter(atom.keys())) for atom in projected ]
             orbit_list = [ next(iter(atom.values())) for atom in projected ]
             num_proj = sum([len(item) for item in orbit_list])
-
             atom_index = [ self.get_atom_index(atom) for atom in atoms_list ]
             projection = []
             for ielem, elem in enumerate(atom_index):
-                aaa = np.array( [ np.sum( self.proj[ispin,:,:,elem,:], axis=0) for ispin in range(self.nspin) ] )
                 orbit_index = self.get_orbit_index( orbit_list[ielem][0] )
+                aaa = np.array( [ np.sum( self.proj[ispin,:,:,elem,:], axis=0) for ispin in range(self.nspin) ] )
                 bbb = np.array( [ np.sum( aaa[ispin,:,:,orbit_index], axis = 0 ) for ispin in range(self.nspin) ] )
                 projection.append(bbb)
             rest = np.ones((self.nspin,self.kpoints.ntotal,self.nbands),dtype=np.float)  - projection[0] - projection[1]
@@ -300,13 +327,13 @@ class bandstructure:
             projection = np.array(projection)
             for ispin in range(self.nspin):
                 for ibnd in range(self.nbands):
-                    rgbline(ax, self.kpoints.kpath, self.eigs[ispin,:,ibnd], projection[0,ispin,:,ibnd], projection[1,ispin,:,ibnd], projection[2,ispin,:,ibnd])
+                    rgbline(ax, self.kpoints.kpath, band[ispin,:,ibnd], projection[0,ispin,:,ibnd], projection[1,ispin,:,ibnd], projection[2,ispin,:,ibnd], lw=lw)
         else :
             for ibnd in range(self.nbands):
-                ax.plot(self.kpoints.kpath, self.eigs[0,:,ibnd], 'r-', linewidth=lw )
+                ax.plot(self.kpoints.kpath, band[0,:,ibnd], 'r-', linewidth=lw )
             if self.nspin == 2 :
                 for ibnd in range(self.nbands):
-                    ax.plot(self.kpoints.kpath, self.eigs[1,:,ibnd], 'b-', linewidth=lw )
+                    ax.plot(self.kpoints.kpath, band[1,:,ibnd], 'b-', linewidth=lw )
 
         # Fermi level
         ax.text(self.kpoints.kpath.max(), 0.0, r'$E_F$')
