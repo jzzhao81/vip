@@ -2,8 +2,8 @@
 # @Author: jzzhao
 # @Email:  jianzhou.zhao@gmail.com
 # @Date:   2017-12-31 13:04:56
-# @Last Modified by:   Jianzhou Zhao
-# @Last Modified time: 2018-03-07 09:57:34
+# @Last Modified by:   jzzhao
+# @Last Modified time: 2018-06-18 14:26:36
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -19,7 +19,7 @@ orbit_dict = {
         'px': ['px'],
         'py': ['py'],
         'pz': ['pz'],
-        'p': ['py','pz','px'],
+        'p' : ['py','pz','px'],
         'dxy': ['dxy'],
         'dyz': ['dyz'],
         'dz2': ['dz2'],
@@ -165,8 +165,12 @@ class dos:
         else :
             ax.set_ylim(ylim[0], ylim[1])
 
-        ax.fill_between(self.energy_grid, 0.0, self.total_dos[0], color=(0.7, 0.7, 0.7),facecolor=(0.7, 0.7, 0.7))
-        ax.plot( self.energy_grid, self.total_dos[0], lw=lw, label='Total DOS' )
+        ax.fill_between(self.energy_grid, 0.0, +1.0*self.total_dos[0], color=(0.7, 0.7, 0.7),facecolor=(0.7, 0.7, 0.7))
+        ax.plot( self.energy_grid, +1.0*self.total_dos[0], lw=lw, label='Total DOS' )
+        if self.nspin == 2:
+            ax.axhline(y=0.0,color='k',lw=0.8)
+            ax.fill_between(self.energy_grid, 0.0, -1.0*self.total_dos[1], color=(0.7, 0.7, 0.7),facecolor=(0.7, 0.7, 0.7))
+            ax.plot( self.energy_grid, -1.0*self.total_dos[1], lw=lw, label='Total DOS' )
 
         if partial :
             atoms_list = [ next(iter(atom.keys())) for atom in partial ]
@@ -176,9 +180,12 @@ class dos:
                 for iorb, orbit in enumerate(orbit_list[iatm]):
                     orbit_index = self.get_orbit_index(orbit)
                     line = np.sum( np.sum( [self.partial_dos[iatm, 0, :, orbit_index] for iatm in atom_index], axis=0 ), axis=0 )
-                    ax.plot( self.energy_grid, line ,lw=lw, \
+                    ax.plot( self.energy_grid, +1.0*line ,lw=lw, \
                         label=next(iter(partial[iatm].keys()))+' '+ next(iter(partial[iatm].values()))[iorb])
-
+                    if self.nspin == 2:
+                        line = np.sum( np.sum( [self.partial_dos[iatm, 1, :, orbit_index] for iatm in atom_index], axis=0 ), axis=0 )
+                        ax.plot( self.energy_grid, -1.0*line ,lw=lw, \
+                            label=next(iter(partial[iatm].keys()))+' '+ next(iter(partial[iatm].values()))[iorb])
         ax.legend()
 
         return plt
@@ -269,7 +276,7 @@ class bandstructure:
                 for ibnd in range(self.nbands):
                     self.proj[ispin,ikpt,ibnd,:,:] /= norm[ispin,ikpt,ibnd]
 
-    def write_file(self, file='bands.dat', efermi=None):
+    def write_file(self, file='bands.dat', efermi=None, bandindex=None):
 
         if efermi :
             band = self.eigs - efermi
@@ -277,10 +284,16 @@ class bandstructure:
             band = self.eigs
 
         band_file = open(file,'w')
-        for ibnd in range(self.nbands):
-            for ikpt in range(self.kpoints.ntotal):
-                band_file.write('{0:10.5f}  {1:10.5f} \n'.format(self.kpoints.kpath[ikpt], band[0,ikpt,ibnd]))
-            band_file.write('\n')
+        if bandindex :
+            for ibnd in bandindex:
+                for ikpt in range(self.kpoints.ntotal):
+                    band_file.write('{0:10.5f}  {1:10.5f} \n'.format(self.kpoints.kpath[ikpt], band[0,ikpt,ibnd]))
+                band_file.write('\n')
+        else :
+            for ibnd in range(self.nbands):
+                for ikpt in range(self.kpoints.ntotal):
+                    band_file.write('{0:10.5f}  {1:10.5f} \n'.format(self.kpoints.kpath[ikpt], band[0,ikpt,ibnd]))
+                band_file.write('\n')
         band_file.close()
         return
 
@@ -321,6 +334,7 @@ class bandstructure:
                 orbit_index = self.get_orbit_index( orbit_list[ielem][0] )
                 aaa = np.array( [ np.sum( self.proj[ispin,:,:,elem,:], axis=0) for ispin in range(self.nspin) ] )
                 bbb = np.array( [ np.sum( aaa[ispin,:,:,orbit_index], axis = 0 ) for ispin in range(self.nspin) ] )
+                bbb[bbb>1.0] = 1.0; bbb[bbb<0.0] = 0.0
                 projection.append(bbb)
             rest = np.ones((self.nspin,self.kpoints.ntotal,self.nbands),dtype=np.float)  - projection[0] - projection[1]
             projection.append( rest )
