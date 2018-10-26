@@ -2,8 +2,8 @@
 # @Author: jzzhao
 # @Email:  jianzhou.zhao@gmail.com
 # @Date:   2017-12-31 13:04:56
-# @Last Modified by:   jzzhao
-# @Last Modified time: 2018-06-18 14:26:36
+# @Last Modified by:   jzzhao81
+# @Last Modified time: 2018-10-26 10:59:03
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -26,12 +26,12 @@ orbit_dict = {
         'dxz': ['dxz'],
         'x2-y2': ['x2-y2'],
         'd': ['dxy', 'dyz', 'dz2', 'dxz', 'x2-y2'],
-        'f': ['f-3','f-2','f-1','f0','f1','f2','f3'],
+        'f': ['fy3x2','fxyz','fyz2','fz3','fxz2','fzx2','fx3'],
         't2g': ['dxy', 'dyz', 'dxz'],
         'eg': ['dz2', 'x2-y2']
         }
 
-def rgbline(ax, kpt, eig, red, blue, green, alpha=1., lw=1.0):
+def rgbline(ax, kpt, eig, red, blue, green, alpha=1., lw=1.0, ls='solid'):
     # creation of segments based on
     # http://nbviewer.ipython.org/urls/raw.github.com/dpsanders/matplotlib-examples/master/colorline.ipynb
 
@@ -44,7 +44,7 @@ def rgbline(ax, kpt, eig, red, blue, green, alpha=1., lw=1.0):
     b = np.abs( [0.5 * (blue[i] + blue[i + 1]) for i in range(nsegment)] )
     a = np.ones(nsegment, np.float) * alpha
 
-    lc = LineCollection(segments, colors=list(zip(r, g, b, a)), linewidth=lw)
+    lc = LineCollection(segments, colors=list(zip(r, g, b, a)), linewidth=lw, linestyles=ls)
     ax.add_collection(lc)
 
 class vasprun:
@@ -172,6 +172,9 @@ class dos:
             ax.fill_between(self.energy_grid, 0.0, -1.0*self.total_dos[1], color=(0.7, 0.7, 0.7),facecolor=(0.7, 0.7, 0.7))
             ax.plot( self.energy_grid, -1.0*self.total_dos[1], lw=lw, label='Total DOS' )
 
+        # Fermi energy line
+        ax.plot((0.0, 0.0),(ax.get_ylim()[0],ax.get_ylim()[1]), color='grey', linestyle='--')
+
         if partial :
             atoms_list = [ next(iter(atom.keys())) for atom in partial ]
             orbit_list = [ next(iter(atom.values())) for atom in partial ]
@@ -289,11 +292,21 @@ class bandstructure:
                 for ikpt in range(self.kpoints.ntotal):
                     band_file.write('{0:10.5f}  {1:10.5f} \n'.format(self.kpoints.kpath[ikpt], band[0,ikpt,ibnd]))
                 band_file.write('\n')
+            if self.nspin == 2 :
+                for ibnd in bandindex:
+                    for ikpt in range(self.kpoints.ntotal):
+                        band_file.write('{0:10.5f}  {1:10.5f} \n'.format(self.kpoints.kpath[ikpt], band[1,ikpt,ibnd]))
+                    band_file.write('\n')
         else :
             for ibnd in range(self.nbands):
                 for ikpt in range(self.kpoints.ntotal):
                     band_file.write('{0:10.5f}  {1:10.5f} \n'.format(self.kpoints.kpath[ikpt], band[0,ikpt,ibnd]))
                 band_file.write('\n')
+            if self.nspin == 2:
+                for ibnd in range(self.nbands):
+                    for ikpt in range(self.kpoints.ntotal):
+                        band_file.write('{0:10.5f}  {1:10.5f} \n'.format(self.kpoints.kpath[ikpt], band[1,ikpt,ibnd]))
+                    band_file.write('\n')
         band_file.close()
         return
 
@@ -322,7 +335,7 @@ class bandstructure:
             ax.set_ylim(ylim[0], ylim[1])
 
         # plot band structure
-        # First projection is red, Second projection is blue, others are green
+        # First projection is in red, Second projection is in blue, others are green
         if projected :
             self.get_normalize()
             atoms_list = [ next(iter(atom.keys())) for atom in projected ]
@@ -334,14 +347,18 @@ class bandstructure:
                 orbit_index = self.get_orbit_index( orbit_list[ielem][0] )
                 aaa = np.array( [ np.sum( self.proj[ispin,:,:,elem,:], axis=0) for ispin in range(self.nspin) ] )
                 bbb = np.array( [ np.sum( aaa[ispin,:,:,orbit_index], axis = 0 ) for ispin in range(self.nspin) ] )
-                bbb[bbb>1.0] = 1.0; bbb[bbb<0.0] = 0.0
+                bbb[bbb>=1.0] = 0.9999; bbb[bbb<=0.0] = 0.0001
                 projection.append(bbb)
             rest = np.ones((self.nspin,self.kpoints.ntotal,self.nbands),dtype=np.float)  - projection[0] - projection[1]
             projection.append( rest )
             projection = np.array(projection)
-            for ispin in range(self.nspin):
+            for ibnd in range(self.nbands):
+                rgbline(ax, self.kpoints.kpath, band[0,:,ibnd], projection[0,0,:,ibnd], \
+                    projection[1,0,:,ibnd], projection[2,0,:,ibnd], lw=lw, ls='solid')
+            if self.nspin == 2:
                 for ibnd in range(self.nbands):
-                    rgbline(ax, self.kpoints.kpath, band[ispin,:,ibnd], projection[0,ispin,:,ibnd], projection[1,ispin,:,ibnd], projection[2,ispin,:,ibnd], lw=lw)
+                    rgbline(ax, self.kpoints.kpath, band[1,:,ibnd], projection[0,1,:,ibnd], \
+                        projection[1,1,:,ibnd], projection[2,1,:,ibnd], lw=lw, ls='dotted')
         else :
             for ibnd in range(self.nbands):
                 ax.plot(self.kpoints.kpath, band[0,:,ibnd], 'r-', linewidth=lw )
@@ -369,6 +386,20 @@ class bandstructure:
 
         return ax
 
+
+class fermisurface():
+
+    def __init__(self, xml_data, name='Fermi surface object'):
+        self.name = name
+        self.xml_data = xml_data
+        self.nbands = int( self.xml_data.find('.//parameters/separator[@name="electronic"]/i[@name="NBANDS"]').text )
+        self.nspin = int( self.xml_data.find('.//parameters/separator[@name="electronic"]/separator[@name="electronic spin"]/i[@name="ISPIN"]').text )
+
+    def get_eigenvalues(self):
+        eigenvalues_tree = self.xml_data.find('.//calculation/eigenvalues/array/set')
+        self.eigs = np.array( [ [ [ bnd.text.split()[0] for bnd in kpt ] for kpt in spin ] \
+            for spin in eigenvalues_tree[:self.nspin] ], dtype=np.float ).reshape(-1,self.kpoints.ntotal,self.nbands)
+        return
 
 if __name__ == '__main__':
 
