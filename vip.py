@@ -206,14 +206,21 @@ class kpoints:
         self.rec_basis = np.array( [ data.text.split() \
             for data in self.xml_data.find('.//structure[@name="finalpos"]/crystal/varray[@name="rec_basis"]')], dtype=np.float )*np.pi*2.0
         # get K-Points mode
-        self.kmode = self.xml_data.find('.//kpoints/generation').attrib["param"]
-        if self.kmode == "listgenerated" :
-            self.kdiv = int( self.xml_data.find('.//kpoints/generation/i[@name="divisions"]').text )
-        else :
-            self.kdiv = np.array( self.xml_data.find('.//kpoints/generation/v[@name="divisions"]').text.split(), dtype=np.int )
+        try:
+            self.kmode = self.xml_data.find('.//kpoints/generation').attrib["param"]
+            if self.kmode == "listgenerated" :
+                self.kdiv = int( self.xml_data.find('.//kpoints/generation/i[@name="divisions"]').text )
+            else :
+                self.kdiv = np.array( self.xml_data.find('.//kpoints/generation/v[@name="divisions"]').text.split(), dtype=np.int )
+        except AttributeError as err :
+            print('Error in reading kpoints divisions, try to read kpoints list directly')
+            self.kdiv = None
+            pass
         self.klist = np.array( [ data.text.split() for data in self.xml_data.find('.//kpoints/varray[@name="kpointlist"]') ], dtype=np.float)
         self.ntotal = len(self.klist)
+        if self.kdiv is None : self.kdiv = self.ntotal 
         self.nkseg = self.ntotal // self.kdiv
+        print(self.ntotal, self.kdiv, self.nkseg)
         return self
 
     def get_kpath(self):
@@ -310,7 +317,7 @@ class bandstructure:
         band_file.close()
         return
 
-    def get_plot(self, labl=None, xlim=None, ylim=None, lw=1.2, efermi=None, projected=None):
+    def get_plot(self, tics=None, labl=None, xlim=None, ylim=None, lw=1.2, efermi=None, projected=None):
 
         if efermi :
             band = self.eigs - efermi
@@ -318,21 +325,10 @@ class bandstructure:
             band = self.eigs
 
         # get x ticks
-        tics = self.get_xtics()
+        if tics is None:
+            tics = self.get_xtics()
 
         fig, ax = plt.subplots(figsize=(6.0, 6.0))
-
-        # set x limit
-        if not xlim :
-            ax.set_xlim(self.kpoints.kpath.min(), self.kpoints.kpath.max())
-        else :
-            ax.set_xlim(xlim[0], xlim[1])
-
-        # set y limit
-        if not ylim :
-            ax.set_ylim(band.min(), band.max())
-        else :
-            ax.set_ylim(ylim[0], ylim[1])
 
         # plot band structure
         # First projection is in red, Second projection is in blue, others are green
@@ -370,6 +366,21 @@ class bandstructure:
         ax.text(self.kpoints.kpath.max(), 0.0, r'$E_F$')
         ax.plot([self.kpoints.kpath.min(), self.kpoints.kpath.max()], [0.0, 0.0],
              color='grey', linestyle='--', linewidth=0.8)
+
+        # set x limit
+        if xlim is None:
+            ax.set_xlim(self.kpoints.kpath.min(), self.kpoints.kpath.max())
+        else :
+            ax.set_xlim(xlim[0], xlim[1])
+
+        # set y limit
+        if ylim is None:
+            ax.set_ylim(band.min(), band.max())
+        else :
+            ax.set_ylim(ylim[0], ylim[1])
+
+        if xlim is not None:
+            tics = [data for data in tics if data>=xlim[0] and data<=xlim[1]]
 
         # Set x ticks
         ax.set_xticks(tics)
